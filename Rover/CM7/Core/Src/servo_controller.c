@@ -1,0 +1,167 @@
+#include "servo_controller.h"
+
+
+uint8_t ServoMotors_PWM_Init(TIM_HandleTypeDef * htim) {
+
+	//TIM 1 PARA SERVOS DE DIRECCIÓN
+	//TIM 8 PARA SERVOS PARA SENSOR DE SUELO
+
+	if (htim->Instance == TIM1) {
+		if (HAL_TIM_PWM_Start(htim, TIM_CHANNEL_1) != HAL_OK) {
+			return 1;
+		}
+
+		if (HAL_TIM_PWM_Start(htim, TIM_CHANNEL_2) != HAL_OK) {
+			return 1;
+		}
+
+		if (HAL_TIM_PWM_Start(htim, TIM_CHANNEL_3) != HAL_OK) {
+			return 1;
+		}
+
+		if (HAL_TIM_PWM_Start(htim, TIM_CHANNEL_4) != HAL_OK) {
+			return 1;
+		}
+	} else if (htim ->Instance == TIM8) {
+		if (HAL_TIM_PWM_Start(htim, TIM_CHANNEL_1) != HAL_OK) {
+			return 1;
+		}
+
+		if (HAL_TIM_PWM_Start(htim, TIM_CHANNEL_2) != HAL_OK) {
+			return 1;
+		}
+
+	}
+
+	return 0;
+
+}
+
+//Va a ser un cambio de 10° cada 110ms para prueba 1
+
+SteeringAngles ChangeRoverDirection(TIM_HandleTypeDef * htim, TIM_OC_InitTypeDef * sConfig,
+							SteeringAngles current_angles, uint8_t direction) {
+
+	SteeringAngles new_angle_steering_servos;
+
+	//CHANCE PONER EN UNA FUNCIÓN ANTES DE MAIN PARA NO ANDAR ASIGNANDO SIEMPRE EN CADA ITERACIÓN
+	//TODO 1
+	//CHECAR SI SE PUEDE
+
+	sConfig->OCMode = TIM_OCMODE_PWM1;
+	sConfig->OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfig->OCNPolarity = TIM_OCNPOLARITY_HIGH;
+	sConfig->OCFastMode = TIM_OCFAST_DISABLE;
+	sConfig->OCIdleState = TIM_OCIDLESTATE_RESET;
+	sConfig->OCNIdleState = TIM_OCNIDLESTATE_RESET;
+
+	if (direction == RIGHT) {
+		new_angle_steering_servos = MoveRight(sConfig, htim, current_angles);
+	} else if (direction == LEFT) {
+		new_angle_steering_servos = MoveLeft(sConfig, htim, current_angles);
+	} else {
+		Error_Handler();
+	}
+
+	return new_angle_steering_servos;
+}
+
+SteeringAngles MoveRight(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
+	SteeringAngles current_angles) {
+
+
+	//TEMPORAL PARA PRUEBAS, SAO TIENE UNA FORMULA
+
+	SteeringAngles new_angles = {
+			.front_right = current_angles.front_right - 10, //Inner
+			.front_left = current_angles.front_left - 10, //Exterior
+			.rear_right =current_angles.rear_right + 10, //Inner
+			.rear_left = current_angles.rear_left + 10 //Exterior
+	};
+
+
+	uint8_t new_front_inner_pulse = MIN_PULSE + ((new_angles.front_right / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
+	uint8_t new_front_exterior_pulse = MIN_PULSE + ((new_angles.front_left / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
+
+	uint8_t new_rear_inner_pulse = MIN_PULSE + ((new_angles.rear_right / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
+	uint8_t new_rear_exterior_pulse = MIN_PULSE + ((new_angles.rear_left / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
+
+
+	sConfig -> Pulse = new_front_inner_pulse;
+
+	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_2) != HAL_OK) {
+		  Error_Handler();
+	}
+
+	sConfig -> Pulse = new_front_exterior_pulse;
+
+	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_1) != HAL_OK) {
+	  Error_Handler();
+	}
+
+	sConfig -> Pulse = new_rear_inner_pulse;
+
+	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_4) != HAL_OK) {
+			Error_Handler();
+	}
+
+	sConfig -> Pulse = new_rear_exterior_pulse;
+
+	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_3) != HAL_OK) {
+		Error_Handler();
+	}
+
+
+
+	return new_angles;
+}
+
+SteeringAngles MoveLeft(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
+	SteeringAngles current_angles) {
+
+
+	//TEMPORAL PARA PRUEBAS, SAO TIENE UNA FORMULA
+
+	SteeringAngles new_angles = {
+			.front_right = current_angles.front_right + 10, //Inner
+			.front_left = current_angles.front_left + 10, //Exterior
+			.rear_right =current_angles.rear_right - 10, //Inner
+			.rear_left = current_angles.rear_left - 10 //Exterior
+	};
+
+
+	uint8_t new_front_inner_pulse = MIN_PULSE + ((new_angles.front_right / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
+	uint8_t new_front_exterior_pulse = MIN_PULSE + ((new_angles.front_left / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
+
+	uint8_t new_rear_inner_pulse = MIN_PULSE + ((new_angles.rear_right / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
+	uint8_t new_rear_exterior_pulse = MIN_PULSE + ((new_angles.rear_left / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
+
+
+	sConfig -> Pulse = new_front_exterior_pulse;
+
+	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_2) != HAL_OK) {
+		  Error_Handler();
+	}
+
+	sConfig -> Pulse = new_front_inner_pulse;
+
+	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_1) != HAL_OK) {
+	  Error_Handler();
+	}
+
+	sConfig -> Pulse = new_rear_exterior_pulse;
+
+	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_4) != HAL_OK) {
+			Error_Handler();
+	}
+
+	sConfig -> Pulse = new_rear_inner_pulse;
+
+	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_3) != HAL_OK) {
+		Error_Handler();
+	}
+
+
+
+	return new_angles;
+}
