@@ -191,19 +191,9 @@ Error_Handler();
 
     /* USER CODE BEGIN 3 */
 
-	  for (int i = 0; i < 9; i++) {
-		  ChangeRoverDirection(&htim1, &sConfigOC,
-		  							 steering_angles, RIGHT);
-
-		  HAL_Delay(110);
-	  }
-
-	  for (int i = 0; i < 9; i++) {
-	  		  ChangeRoverDirection(&htim1, &sConfigOC,
-	  		  							 steering_angles, LEFT);
-
-	  		  HAL_Delay(110);
-	  }
+	  for (int i = 0; i < 9;  i++) { steering_angles = ChangeRoverDirection(&htim1, &sConfigOC, steering_angles, RIGHT); HAL_Delay(110); }
+	  for (int i = 0; i < 18; i++) { steering_angles = ChangeRoverDirection(&htim1, &sConfigOC, steering_angles, LEFT);  HAL_Delay(110); }
+	  for (int i = 0; i < 9;  i++) { steering_angles = ChangeRoverDirection(&htim1, &sConfigOC, steering_angles, RIGHT); HAL_Delay(110); }
 
   }
   /* USER CODE END 3 */

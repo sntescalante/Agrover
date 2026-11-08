@@ -73,18 +73,41 @@ SteeringAngles MoveRight(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 	//TEMPORAL PARA PRUEBAS, SAO TIENE UNA FORMULA
 
 	SteeringAngles new_angles = {
-			.front_right = current_angles.front_right - 10, //Inner
-			.front_left = current_angles.front_left - 10, //Exterior
-			.rear_right =current_angles.rear_right + 10, //Inner
-			.rear_left = current_angles.rear_left + 10 //Exterior
+			.front_right = 0, //Inner
+			.front_left = 0, //Exterior
+			.rear_right = 0, //Inner
+			.rear_left = 0 //Exterior
 	};
 
+	if (current_angles.front_right >= 10) {
+		new_angles.front_right = current_angles.front_right - 10;
+	} else {
+		new_angles.front_right = current_angles.front_right;
+	}
 
-	uint8_t new_front_inner_pulse = MIN_PULSE + ((new_angles.front_right / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
-	uint8_t new_front_exterior_pulse = MIN_PULSE + ((new_angles.front_left / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
+	if (current_angles.front_left >= 10) {
+		new_angles.front_left = current_angles.front_left - 10;
+	} else {
+		new_angles.front_left = current_angles.front_left;
+	}
 
-	uint8_t new_rear_inner_pulse = MIN_PULSE + ((new_angles.rear_right / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
-	uint8_t new_rear_exterior_pulse = MIN_PULSE + ((new_angles.rear_left / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
+	if (current_angles.rear_right <= (THETA_MAX - 10)) {
+		new_angles.rear_right = current_angles.rear_right + 10;
+	} else {
+		new_angles.rear_right = current_angles.rear_right;
+	}
+
+	if (current_angles.rear_left <= (THETA_MAX - 10)) {
+		new_angles.rear_left = current_angles.rear_left + 10;
+	} else {
+		new_angles.rear_left = current_angles.rear_left;
+	}
+
+	uint16_t new_front_inner_pulse = MIN_PULSE + ((uint16_t)new_angles.front_right * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
+	uint16_t new_front_exterior_pulse = MIN_PULSE + ((uint16_t)new_angles.front_left * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
+
+	uint16_t new_rear_inner_pulse = MIN_PULSE + ((uint16_t)new_angles.rear_right * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
+	uint16_t new_rear_exterior_pulse = MIN_PULSE + ((uint16_t)new_angles.rear_left * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
 
 
 	sConfig -> Pulse = new_front_inner_pulse;
@@ -119,49 +142,50 @@ SteeringAngles MoveRight(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 SteeringAngles MoveLeft(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 	SteeringAngles current_angles) {
 
-
 	//TEMPORAL PARA PRUEBAS, SAO TIENE UNA FORMULA
 
-	SteeringAngles new_angles = {
-			.front_right = current_angles.front_right + 10, //Inner
-			.front_left = current_angles.front_left + 10, //Exterior
-			.rear_right =current_angles.rear_right - 10, //Inner
-			.rear_left = current_angles.rear_left - 10 //Exterior
-	};
+	SteeringAngles new_angles = current_angles;
 
+	if (current_angles.front_right <= (THETA_MAX - 10)) {
+		new_angles.front_right = current_angles.front_right + 10;
+	}
 
-	uint8_t new_front_inner_pulse = MIN_PULSE + ((new_angles.front_right / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
-	uint8_t new_front_exterior_pulse = MIN_PULSE + ((new_angles.front_left / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
+	if (current_angles.front_left <= (THETA_MAX - 10)) {
+		new_angles.front_left = current_angles.front_left + 10;
+	}
 
-	uint8_t new_rear_inner_pulse = MIN_PULSE + ((new_angles.rear_right / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
-	uint8_t new_rear_exterior_pulse = MIN_PULSE + ((new_angles.rear_left / THETA_MAX) * (MAX_PULSE - MIN_PULSE));
+	if (current_angles.rear_right >= 10) {
+		new_angles.rear_right = current_angles.rear_right - 10;
+	}
 
+	if (current_angles.rear_left >= 10) {
+		new_angles.rear_left = current_angles.rear_left - 10;
+	}
 
-	sConfig -> Pulse = new_front_exterior_pulse;
+	uint16_t front_right_pulse = MIN_PULSE + ((uint16_t)new_angles.front_right * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
+	uint16_t front_left_pulse  = MIN_PULSE + ((uint16_t)new_angles.front_left  * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
+	uint16_t rear_right_pulse  = MIN_PULSE + ((uint16_t)new_angles.rear_right  * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
+	uint16_t rear_left_pulse   = MIN_PULSE + ((uint16_t)new_angles.rear_left   * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
 
+	sConfig->Pulse = front_right_pulse;
 	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_2) != HAL_OK) {
-		  Error_Handler();
-	}
-
-	sConfig -> Pulse = new_front_inner_pulse;
-
-	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_1) != HAL_OK) {
-	  Error_Handler();
-	}
-
-	sConfig -> Pulse = new_rear_exterior_pulse;
-
-	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_4) != HAL_OK) {
-			Error_Handler();
-	}
-
-	sConfig -> Pulse = new_rear_inner_pulse;
-
-	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_3) != HAL_OK) {
 		Error_Handler();
 	}
 
+	sConfig->Pulse = front_left_pulse;
+	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_1) != HAL_OK) {
+		Error_Handler();
+	}
 
+	sConfig->Pulse = rear_right_pulse;
+	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_4) != HAL_OK) {
+		Error_Handler();
+	}
+
+	sConfig->Pulse = rear_left_pulse;
+	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_3) != HAL_OK) {
+		Error_Handler();
+	}
 
 	return new_angles;
 }
