@@ -1,6 +1,15 @@
 #include "servo_controller.h"
 
 
+static const float W  = 20.0f;   // ancho entre ruedas izq-der
+static const float Lf = 20.0f;   // eje delantero al centro
+static const float Lr = 20.0f;   // eje trasero al centro
+
+
+uint16_t AngleToPulse(float angle) {
+	return (uint16_t)(MIN_PULSE_0 + (angle / 180.0f) * (MAX_PULSE_180 - MIN_PULSE_0));
+}
+
 uint8_t ServoMotors_PWM_Init(TIM_HandleTypeDef * htim) {
 
 	//TIM 1 PARA SERVOS DE DIRECCIÓN
@@ -44,10 +53,6 @@ SteeringAngles ChangeRoverDirection(TIM_HandleTypeDef * htim, TIM_OC_InitTypeDef
 
 	SteeringAngles new_angle_steering_servos;
 
-	//CHANCE PONER EN UNA FUNCIÓN ANTES DE MAIN PARA NO ANDAR ASIGNANDO SIEMPRE EN CADA ITERACIÓN
-	//TODO 1
-	//CHECAR SI SE PUEDE
-
 	sConfig->OCMode = TIM_OCMODE_PWM1;
 	sConfig->OCPolarity = TIM_OCPOLARITY_HIGH;
 	sConfig->OCNPolarity = TIM_OCNPOLARITY_HIGH;
@@ -70,44 +75,55 @@ SteeringAngles MoveRight(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 	SteeringAngles current_angles) {
 
 
-	//TEMPORAL PARA PRUEBAS, SAO TIENE UNA FORMULA
-
 	SteeringAngles new_angles = {
-			.front_right = 0, //Inner
-			.front_left = 0, //Exterior
-			.rear_right = 0, //Inner
-			.rear_left = 0 //Exterior
+			.front_right = 0.0f, //Inner (ANGULO BASE PARA GIRO DERECHA)
+			.front_left = 0.0f, //Exterior
+			.rear_right = 0.0f, //Inner
+			.rear_left = 0.0f //Exterior
 	};
 
-	if (current_angles.front_right >= 10) {
-		new_angles.front_right = current_angles.front_right - 10;
-	} else {
-		new_angles.front_right = current_angles.front_right;
-	}
+	if (current_angles.front_right >= (THETA_MIN + 10)) {
 
-	if (current_angles.front_left >= 10) {
-		new_angles.front_left = current_angles.front_left - 10;
-	} else {
-		new_angles.front_left = current_angles.front_left;
-	}
+			new_angles.front_right = current_angles.front_right - 10;
 
-	if (current_angles.rear_right <= (THETA_MAX - 10)) {
-		new_angles.rear_right = current_angles.rear_right + 10;
-	} else {
-		new_angles.rear_right = current_angles.rear_right;
-	}
+			float theta_di = THETA_CENTER - new_angles.front_right;
 
-	if (current_angles.rear_left <= (THETA_MAX - 10)) {
-		new_angles.rear_left = current_angles.rear_left + 10;
-	} else {
-		new_angles.rear_left = current_angles.rear_left;
-	}
+			if (theta_di > 0.5f) { // Para que no haya divisiones entre 0
 
-	uint16_t new_front_inner_pulse = MIN_PULSE + ((uint16_t)new_angles.front_right * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
-	uint16_t new_front_exterior_pulse = MIN_PULSE + ((uint16_t)new_angles.front_left * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
+				//Fórmulas de Ackermann
 
-	uint16_t new_rear_inner_pulse = MIN_PULSE + ((uint16_t)new_angles.rear_right * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
-	uint16_t new_rear_exterior_pulse = MIN_PULSE + ((uint16_t)new_angles.rear_left * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
+				float d = Lf / tanf(theta_di * DEG2RAD);
+
+				float theta_de = atanf(Lf / (d + W)) * RAD2DEG;  // delantera externa
+				float theta_ti = atanf(Lr / d)       * RAD2DEG;  // trasera interna
+				float theta_te = atanf(Lr / (d + W)) * RAD2DEG;  // trasera externa
+
+				//Traseras en sentido contrario  a delanteras
+				new_angles.front_left = THETA_CENTER - theta_de;
+				new_angles.rear_right = THETA_CENTER + theta_ti;
+				new_angles.rear_left  = THETA_CENTER + theta_te;
+
+			} else {
+				new_angles.front_left = THETA_CENTER;
+				new_angles.rear_right = THETA_CENTER;
+				new_angles.rear_left  = THETA_CENTER;
+			}
+
+			new_angles.front_left = fminf(fmaxf(new_angles.front_left, THETA_MIN), THETA_MAX);
+			new_angles.rear_right = fminf(fmaxf(new_angles.rear_right, THETA_MIN), THETA_MAX);
+			new_angles.rear_left  = fminf(fmaxf(new_angles.rear_left,  THETA_MIN), THETA_MAX);
+
+		} else {
+			new_angles.front_right = current_angles.front_right;
+			new_angles.front_left = current_angles.front_left;
+			new_angles.rear_right = current_angles.rear_right;
+			new_angles.rear_left = current_angles.rear_left;
+		}
+
+	uint16_t new_front_inner_pulse = AngleToPulse(new_angles.front_right);
+	uint16_t new_front_exterior_pulse = AngleToPulse(new_angles.front_left);
+	uint16_t new_rear_inner_pulse = AngleToPulse(new_angles.rear_right);
+	uint16_t new_rear_exterior_pulse = AngleToPulse(new_angles.rear_left);
 
 
 	sConfig -> Pulse = new_front_inner_pulse;
@@ -135,7 +151,6 @@ SteeringAngles MoveRight(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 	}
 
 
-
 	return new_angles;
 }
 
@@ -144,45 +159,73 @@ SteeringAngles MoveLeft(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 
 	//TEMPORAL PARA PRUEBAS, SAO TIENE UNA FORMULA
 
-	SteeringAngles new_angles = current_angles;
-
-	if (current_angles.front_right <= (THETA_MAX - 10)) {
-		new_angles.front_right = current_angles.front_right + 10;
-	}
+	SteeringAngles new_angles = {
+				.front_right = 0.0f, //Exterior
+				.front_left = 0.0f, //Inner (ANGULO BASE PARA GIRO IZQUIERDA)
+				.rear_right = 0.0f, //Exterior
+				.rear_left = 0.0f //Inner
+	};
 
 	if (current_angles.front_left <= (THETA_MAX - 10)) {
+
 		new_angles.front_left = current_angles.front_left + 10;
+
+		float theta_di = new_angles.front_left - THETA_CENTER;
+
+		if (theta_di > 0.5f) { // Para que no haya divisiones entre 0
+
+			//Fórmulas de Ackermann
+
+			float d = Lf / tanf(theta_di * DEG2RAD);
+
+			float theta_de = atanf(Lf / (d + W)) * RAD2DEG;  // delantera externa
+			float theta_ti = atanf(Lr / d)       * RAD2DEG;  // trasera interna
+			float theta_te = atanf(Lr / (d + W)) * RAD2DEG;  // trasera externa
+
+			//Traseras en sentido contrario  a delanteras
+			new_angles.front_right = THETA_CENTER + theta_de;
+			new_angles.rear_left = THETA_CENTER - theta_ti;
+			new_angles.rear_right  = THETA_CENTER - theta_te;
+
+		} else {
+			new_angles.front_right = THETA_CENTER;
+			new_angles.rear_left = THETA_CENTER;
+			new_angles.rear_right  = THETA_CENTER;
+		}
+
+		new_angles.front_right = fminf(fmaxf(new_angles.front_right, THETA_MIN), THETA_MAX);
+		new_angles.rear_left = fminf(fmaxf(new_angles.rear_left, THETA_MIN), THETA_MAX);
+		new_angles.rear_right  = fminf(fmaxf(new_angles.rear_right,  THETA_MIN), THETA_MAX);
+
+	} else {
+		new_angles.front_right = current_angles.front_right;
+		new_angles.front_left = current_angles.front_left;
+		new_angles.rear_right = current_angles.rear_right;
+		new_angles.rear_left = current_angles.rear_left;
 	}
 
-	if (current_angles.rear_right >= 10) {
-		new_angles.rear_right = current_angles.rear_right - 10;
-	}
 
-	if (current_angles.rear_left >= 10) {
-		new_angles.rear_left = current_angles.rear_left - 10;
-	}
+	uint16_t new_front_inner_pulse = AngleToPulse(new_angles.front_right);
+	uint16_t new_front_exterior_pulse = AngleToPulse(new_angles.front_left);
+	uint16_t new_rear_inner_pulse = AngleToPulse(new_angles.rear_right);
+	uint16_t new_rear_exterior_pulse = AngleToPulse(new_angles.rear_left);
 
-	uint16_t front_right_pulse = MIN_PULSE + ((uint16_t)new_angles.front_right * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
-	uint16_t front_left_pulse  = MIN_PULSE + ((uint16_t)new_angles.front_left  * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
-	uint16_t rear_right_pulse  = MIN_PULSE + ((uint16_t)new_angles.rear_right  * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
-	uint16_t rear_left_pulse   = MIN_PULSE + ((uint16_t)new_angles.rear_left   * (MAX_PULSE - MIN_PULSE)) / THETA_MAX;
-
-	sConfig->Pulse = front_right_pulse;
+	sConfig->Pulse = new_front_inner_pulse;
 	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_2) != HAL_OK) {
 		Error_Handler();
 	}
 
-	sConfig->Pulse = front_left_pulse;
+	sConfig->Pulse = new_front_exterior_pulse;
 	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_1) != HAL_OK) {
 		Error_Handler();
 	}
 
-	sConfig->Pulse = rear_right_pulse;
+	sConfig->Pulse = new_rear_inner_pulse;
 	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_4) != HAL_OK) {
 		Error_Handler();
 	}
 
-	sConfig->Pulse = rear_left_pulse;
+	sConfig->Pulse = new_rear_exterior_pulse;
 	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_3) != HAL_OK) {
 		Error_Handler();
 	}

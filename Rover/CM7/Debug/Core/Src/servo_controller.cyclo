@@ -1,4 +1,5 @@
-../Core/Src/servo_controller.c:4:9:ServoMotors_PWM_Init	9
-../Core/Src/servo_controller.c:42:16:ChangeRoverDirection	3
-../Core/Src/servo_controller.c:69:16:MoveRight	5
-../Core/Src/servo_controller.c:119:16:MoveLeft	5
+../Core/Src/servo_controller.c:9:10:AngleToPulse	1
+../Core/Src/servo_controller.c:13:9:ServoMotors_PWM_Init	9
+../Core/Src/servo_controller.c:51:16:ChangeRoverDirection	3
+../Core/Src/servo_controller.c:74:16:MoveRight	7
+../Core/Src/servo_controller.c:157:16:MoveLeft	7
