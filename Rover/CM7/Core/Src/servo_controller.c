@@ -1,10 +1,9 @@
 #include "servo_controller.h"
 
 
-float_t W = 20;
-float_t Lf = 20;
-float_t Lr = 20;
-
+static const float W  = 20.0f;   // ancho entre ruedas izq-der
+static const float Lf = 20.0f;   // eje delantero al centro
+static const float Lr = 20.0f;   // eje trasero al centro
 
 
 uint16_t AngleToPulse(float angle) {
@@ -150,7 +149,6 @@ SteeringAngles MoveRight(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_3) != HAL_OK) {
 		Error_Handler();
 	}
-
 
 
 	return new_angles;

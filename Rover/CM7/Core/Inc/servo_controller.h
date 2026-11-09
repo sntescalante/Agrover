@@ -13,8 +13,8 @@
 #define THETA_CENTER 90
 #define THETA_MIN (90 - 40)
 
-#define DEG2RAD  0.01745329f
-#define RAD2DEG  57.2957795f
+#define DEG2RAD  0.01745329f //pi / 180
+#define RAD2DEG  57.2957795f // 180 / pi
 
 
 typedef struct {
