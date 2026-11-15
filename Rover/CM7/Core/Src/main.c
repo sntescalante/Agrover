@@ -25,6 +25,10 @@
 /* USER CODE BEGIN Includes */
 
 #include "servo_controller.h"
+#include "motor_control.h"
+#include "RTOS_Rover.h"
+#include "ReceiveData.h"
+#include <stdbool.h>
 
 /* USER CODE END Includes */
 
@@ -93,6 +97,12 @@ uint8_t dc_motors_backwards_duty_cycle = 0;
 
 const uint16_t ARR = 1279;
 
+
+ReceiveWifiDataConfig configWifi;
+
+bool volatile measuringSoil = false;
+bool volatile acceptableDistance = false;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -115,6 +125,7 @@ void StartDefaultTask(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
 
 /* USER CODE END 0 */
 
@@ -194,7 +205,7 @@ Error_Handler();
   /* USER CODE BEGIN 2 */
 
   ServoMotors_PWM_Init(&htim1);
-  TIM_OC_InitTypeDef sConfigOC = {0};
+  DCmotorsInit();
 
   /* USER CODE END 2 */
 
@@ -203,10 +214,20 @@ Error_Handler();
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
+
+  uartMutexHandle = osMutexNew(&uartMutexAttr);
+
   /* USER CODE END RTOS_MUTEX */
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
+
+  receiveDataSemHandle = osSemaphoreNew(1, 0, &receiveDataSemAttr);
+  processDataSemHandle = osSemaphoreNew(1, 0, &processDataSemAttr);
+  soilMeasureSemHandle = osSemaphoreNew(1, 0, &soilMeasureSemAttr);
+  distanceMeasureSemHandle = osSemaphoreNew(1, 0, &distanceMeasureSemAttr);
+  distanceProcessSemHandle = osSemaphoreNew(1, 0, &distanceProcessSemAttr);
+
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* USER CODE BEGIN RTOS_TIMERS */
@@ -215,11 +236,17 @@ Error_Handler();
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
+
+  soilMeasureQueueHandle = osMessageQueueNew(N_SOIL_MEASURMENTES, sizeof(float), &soilMedQueue_attr);
+
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
   /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+  receiveDataHandle       = osThreadNew(receiveDataTask,     NULL, &receiveDataAttr);
+  measureDistanceHandle   = osThreadNew(measureDistanceTask, NULL, &measureDistanceAttr);
+  processDistanceHandle   = osThreadNew(processDistanceTask, NULL, &processDistanceAttr);
+  processWebCommandHandle = osThreadNew(processWebDataTask,  NULL, &processWebCommandAttr);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -241,10 +268,6 @@ Error_Handler();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
-	  for (int i = 0; i < 9;  i++) { steering_angles = ChangeRoverDirection(&htim1, &sConfigOC, steering_angles, RIGHT); HAL_Delay(110); }
-	  for (int i = 0; i < 18; i++) { steering_angles = ChangeRoverDirection(&htim1, &sConfigOC, steering_angles, LEFT);  HAL_Delay(110); }
-	  for (int i = 0; i < 9;  i++) { steering_angles = ChangeRoverDirection(&htim1, &sConfigOC, steering_angles, RIGHT); HAL_Delay(110); }
 
   }
   /* USER CODE END 3 */
@@ -533,9 +556,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 0;
+  htim3.Init.Prescaler = 999;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 65535;
+  htim3.Init.Period = 1279;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -604,9 +627,9 @@ static void MX_TIM4_Init(void)
 
   /* USER CODE END TIM4_Init 1 */
   htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 0;
+  htim4.Init.Prescaler = 999;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 65535;
+  htim4.Init.Period = 1279;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
@@ -942,6 +965,20 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+//INT CALLBACKS!!!!
+
+extern uint8_t rxByte;
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART1) {
+        osSemaphoreRelease(receiveDataSemHandle);
+        HAL_UART_Receive_IT(huart, &rxByte, 1);
+    }
+
+}
+
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -955,10 +992,10 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+	for(;;)
+	  {
+		  osDelay(osWaitForever);
+	  }
   /* USER CODE END 5 */
 }
 

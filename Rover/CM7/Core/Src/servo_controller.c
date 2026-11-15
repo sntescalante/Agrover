@@ -7,7 +7,8 @@ static const float Lr = 20.0f;   // eje trasero al centro
 
 
 uint16_t AngleToPulse(float angle) {
-	return (uint16_t)(MIN_PULSE_0 + (angle / 180.0f) * (MAX_PULSE_180 - MIN_PULSE_0));
+	angle = fminf(fmaxf(angle, 0.0f), 180.0f);
+	return (uint16_t)(MIN_PULSE_0 + (angle / 180.0f) * (MAX_PULSE_180 - MIN_PULSE_0) + 0.5f);
 }
 
 uint8_t ServoMotors_PWM_Init(TIM_HandleTypeDef * htim) {
@@ -48,31 +49,32 @@ uint8_t ServoMotors_PWM_Init(TIM_HandleTypeDef * htim) {
 
 //Va a ser un cambio de 10° cada 110ms para prueba 1
 
-SteeringAngles ChangeRoverDirection(TIM_HandleTypeDef * htim, TIM_OC_InitTypeDef * sConfig,
+SteeringAngles ChangeRoverDirection(TIM_HandleTypeDef * htim,
 							SteeringAngles current_angles, uint8_t direction) {
 
-	SteeringAngles new_angle_steering_servos;
-
-	sConfig->OCMode = TIM_OCMODE_PWM1;
-	sConfig->OCPolarity = TIM_OCPOLARITY_HIGH;
-	sConfig->OCNPolarity = TIM_OCNPOLARITY_HIGH;
-	sConfig->OCFastMode = TIM_OCFAST_DISABLE;
-	sConfig->OCIdleState = TIM_OCIDLESTATE_RESET;
-	sConfig->OCNIdleState = TIM_OCNIDLESTATE_RESET;
+	SteeringAngles new_angle_steering_servos = current_angles;
 
 	if (direction == RIGHT) {
-		new_angle_steering_servos = MoveRight(sConfig, htim, current_angles);
+		if (current_angles.front_left > (THETA_CENTER + 0.5f)) {
+			//Venimos de giro a la izquierda: regresamos 10° hacia el centro
+			new_angle_steering_servos = MoveLeft(htim, current_angles, -STEP_DEG);
+		} else {
+			new_angle_steering_servos = MoveRight(htim, current_angles, STEP_DEG);
+		}
 	} else if (direction == LEFT) {
-		new_angle_steering_servos = MoveLeft(sConfig, htim, current_angles);
-	} else {
-		Error_Handler();
+		if (current_angles.front_right < (THETA_CENTER - 0.5f)) {
+			//Venimos de giro a la derecha: regresamos 10° hacia el centro
+			new_angle_steering_servos = MoveRight(htim, current_angles, -STEP_DEG);
+		} else {
+			new_angle_steering_servos = MoveLeft(htim, current_angles, STEP_DEG);
+		}
 	}
 
 	return new_angle_steering_servos;
 }
 
-SteeringAngles MoveRight(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
-	SteeringAngles current_angles) {
+SteeringAngles MoveRight(TIM_HandleTypeDef * htim,
+	SteeringAngles current_angles, float step) {
 
 
 	SteeringAngles new_angles = {
@@ -82,9 +84,11 @@ SteeringAngles MoveRight(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 			.rear_left = 0.0f //Exterior
 	};
 
-	if (current_angles.front_right >= (THETA_MIN + 10)) {
+	float target_front_right = current_angles.front_right - step;
 
-			new_angles.front_right = current_angles.front_right - 10;
+	if (target_front_right >= THETA_MIN && target_front_right <= THETA_CENTER) {
+
+			new_angles.front_right = target_front_right;
 
 			float theta_di = THETA_CENTER - new_angles.front_right;
 
@@ -95,10 +99,13 @@ SteeringAngles MoveRight(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 				float d = Lf / tanf(theta_di * DEG2RAD);
 
 				float theta_de = atanf(Lf / (d + W)) * RAD2DEG;  // delantera externa
-				float theta_ti = atanf(Lr / d)       * RAD2DEG;  // trasera interna
+				float theta_ti = atanf(Lr / d) * RAD2DEG;  // trasera interna
 				float theta_te = atanf(Lr / (d + W)) * RAD2DEG;  // trasera externa
 
-				//Traseras en sentido contrario  a delanteras
+				//Traseras en sentido contrario a delanteras
+
+				//TODO
+				//CHECAR SI SUMA APLICA A GEOMETRÍA FÍSICA DEL ROVER
 				new_angles.front_left = THETA_CENTER - theta_de;
 				new_angles.rear_right = THETA_CENTER + theta_ti;
 				new_angles.rear_left  = THETA_CENTER + theta_te;
@@ -126,38 +133,17 @@ SteeringAngles MoveRight(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 	uint16_t new_rear_exterior_pulse = AngleToPulse(new_angles.rear_left);
 
 
-	sConfig -> Pulse = new_front_inner_pulse;
-
-	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_2) != HAL_OK) {
-		  Error_Handler();
-	}
-
-	sConfig -> Pulse = new_front_exterior_pulse;
-
-	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_1) != HAL_OK) {
-	  Error_Handler();
-	}
-
-	sConfig -> Pulse = new_rear_inner_pulse;
-
-	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_4) != HAL_OK) {
-			Error_Handler();
-	}
-
-	sConfig -> Pulse = new_rear_exterior_pulse;
-
-	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_3) != HAL_OK) {
-		Error_Handler();
-	}
-
+	__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_2, new_front_inner_pulse);
+	__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_1, new_front_exterior_pulse);
+	__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_4, new_rear_inner_pulse);
+	__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_3, new_rear_exterior_pulse);
 
 	return new_angles;
 }
 
-SteeringAngles MoveLeft(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
-	SteeringAngles current_angles) {
+SteeringAngles MoveLeft(TIM_HandleTypeDef * htim,
+	SteeringAngles current_angles, float step) {
 
-	//TEMPORAL PARA PRUEBAS, SAO TIENE UNA FORMULA
 
 	SteeringAngles new_angles = {
 				.front_right = 0.0f, //Exterior
@@ -166,9 +152,11 @@ SteeringAngles MoveLeft(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 				.rear_left = 0.0f //Inner
 	};
 
-	if (current_angles.front_left <= (THETA_MAX - 10)) {
+	float target_front_left = current_angles.front_left + step;
 
-		new_angles.front_left = current_angles.front_left + 10;
+	if (target_front_left <= THETA_MAX && target_front_left >= THETA_CENTER) {
+
+		new_angles.front_left = target_front_left;
 
 		float theta_di = new_angles.front_left - THETA_CENTER;
 
@@ -179,10 +167,9 @@ SteeringAngles MoveLeft(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 			float d = Lf / tanf(theta_di * DEG2RAD);
 
 			float theta_de = atanf(Lf / (d + W)) * RAD2DEG;  // delantera externa
-			float theta_ti = atanf(Lr / d)       * RAD2DEG;  // trasera interna
+			float theta_ti = atanf(Lr / d) * RAD2DEG;  // trasera interna
 			float theta_te = atanf(Lr / (d + W)) * RAD2DEG;  // trasera externa
 
-			//Traseras en sentido contrario  a delanteras
 			new_angles.front_right = THETA_CENTER + theta_de;
 			new_angles.rear_left = THETA_CENTER - theta_ti;
 			new_angles.rear_right  = THETA_CENTER - theta_te;
@@ -204,31 +191,15 @@ SteeringAngles MoveLeft(TIM_OC_InitTypeDef * sConfig, TIM_HandleTypeDef * htim,
 		new_angles.rear_left = current_angles.rear_left;
 	}
 
+	uint16_t front_right_pulse = AngleToPulse(new_angles.front_right);
+	uint16_t front_left_pulse  = AngleToPulse(new_angles.front_left);
+	uint16_t rear_right_pulse  = AngleToPulse(new_angles.rear_right);
+	uint16_t rear_left_pulse   = AngleToPulse(new_angles.rear_left);
 
-	uint16_t new_front_inner_pulse = AngleToPulse(new_angles.front_right);
-	uint16_t new_front_exterior_pulse = AngleToPulse(new_angles.front_left);
-	uint16_t new_rear_inner_pulse = AngleToPulse(new_angles.rear_right);
-	uint16_t new_rear_exterior_pulse = AngleToPulse(new_angles.rear_left);
-
-	sConfig->Pulse = new_front_inner_pulse;
-	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_2) != HAL_OK) {
-		Error_Handler();
-	}
-
-	sConfig->Pulse = new_front_exterior_pulse;
-	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_1) != HAL_OK) {
-		Error_Handler();
-	}
-
-	sConfig->Pulse = new_rear_inner_pulse;
-	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_4) != HAL_OK) {
-		Error_Handler();
-	}
-
-	sConfig->Pulse = new_rear_exterior_pulse;
-	if (HAL_TIM_PWM_ConfigChannel(htim, sConfig, TIM_CHANNEL_3) != HAL_OK) {
-		Error_Handler();
-	}
+	__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_2, front_right_pulse);
+	__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_1, front_left_pulse);
+	__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_4, rear_right_pulse);
+	__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_3, rear_left_pulse);
 
 	return new_angles;
 }
