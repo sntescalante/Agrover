@@ -203,10 +203,14 @@ Error_Handler();
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
+
+
   /* USER CODE END RTOS_MUTEX */
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
+
+
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* USER CODE BEGIN RTOS_TIMERS */
