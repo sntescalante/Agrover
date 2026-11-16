@@ -28,6 +28,9 @@
 #include "motor_control.h"
 #include "RTOS_Rover.h"
 #include "ReceiveData.h"
+#include "TransmitData.h"
+#include "sensor_ultravioleta.h"
+#include "soil_sensor.h"
 #include <stdbool.h>
 
 /* USER CODE END Includes */
@@ -97,11 +100,12 @@ uint8_t dc_motors_backwards_duty_cycle = 0;
 
 const uint16_t ARR = 1279;
 
-
 ReceiveWifiDataConfig configWifi;
 
 bool volatile measuringSoil = false;
 bool volatile acceptableDistance = false;
+
+SoilData soilData;
 
 /* USER CODE END PV */
 
@@ -216,6 +220,7 @@ Error_Handler();
   /* add mutexes, ... */
 
   uartMutexHandle = osMutexNew(&uartMutexAttr);
+  i2c2MutexHandle = osMutexNew(&i2c2MutexAttr);
 
   /* USER CODE END RTOS_MUTEX */
 
@@ -224,9 +229,19 @@ Error_Handler();
 
   receiveDataSemHandle = osSemaphoreNew(1, 0, &receiveDataSemAttr);
   processDataSemHandle = osSemaphoreNew(1, 0, &processDataSemAttr);
+
   soilMeasureSemHandle = osSemaphoreNew(1, 0, &soilMeasureSemAttr);
+  soilDataProcessSemHandle = osSemaphoreNew(1, 0, &soilDataProcessSemAttr);
+
   distanceMeasureSemHandle = osSemaphoreNew(1, 0, &distanceMeasureSemAttr);
   distanceProcessSemHandle = osSemaphoreNew(1, 0, &distanceProcessSemAttr);
+  wateringSemHandle = osSemaphoreNew(1, 0, &wateringProcessSemAttr);
+
+  transmitDataSemHandle = osSemaphoreNew(1, 0, &transmitDataSemAttr);
+
+  guvaProcessSemHandle = osSemaphoreNew(1,  0, &guvaProcessSemAttr);
+
+
 
   /* USER CODE END RTOS_SEMAPHORES */
 
@@ -243,13 +258,39 @@ Error_Handler();
 
   /* Create the thread(s) */
   /* creation of defaultTask */
-  receiveDataHandle       = osThreadNew(receiveDataTask,     NULL, &receiveDataAttr);
-  measureDistanceHandle   = osThreadNew(measureDistanceTask, NULL, &measureDistanceAttr);
-  processDistanceHandle   = osThreadNew(processDistanceTask, NULL, &processDistanceAttr);
-  processWebCommandHandle = osThreadNew(processWebDataTask,  NULL, &processWebCommandAttr);
+  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
+
+  sendDataHandle = osThreadNew(TransmitDataTask, NULL, &sendDataAttr);
+
+  receiveDataHandle = osThreadNew(receiveDataTask, NULL, &receiveDataAttr);
+
+  processWebCommandHandle = osThreadNew(processWebDataTask, NULL, &processWebCommandAttr);
+
+  measureDistanceHandle = osThreadNew(measureDistanceTask, NULL, &measureDistanceAttr);
+
+  processDistanceHandle = osThreadNew(processDistanceTask, NULL, &processDistanceAttr);
+
+  measureSoilHandle = osThreadNew(soilMeasuringTask, NULL, &measureSoilAttr);
+
+  processSoilDataHandle = osThreadNew(soilDataProcessTask, NULL, &proccessSoilDataAttr);
+
+  wateringHandle = osThreadNew(wateringTask, NULL, &wateringAttr);
+
+  measureEnvironmentHandle = osThreadNew(readEnvironmentSensorsTask, NULL, &measureEnvironmentAttr);
+
+  processEnvironmentDataHandle = osThreadNew(processGUVAsensorTask, NULL, &processEnvironmentDataAttr);
+
+
+  if (!receiveDataHandle || !measureDistanceHandle || !processDistanceHandle ||
+      !processWebCommandHandle || !measureSoilHandle || !processSoilDataHandle ||
+      !wateringHandle || !sendDataHandle || !measureEnvironmentHandle || !processEnvironmentDataHandle) {
+      Error_Handler();
+  }
+
+
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -381,7 +422,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_15;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_387CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -556,7 +597,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 999;
+  htim3.Init.Prescaler = 4;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim3.Init.Period = 1279;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -627,7 +668,7 @@ static void MX_TIM4_Init(void)
 
   /* USER CODE END TIM4_Init 1 */
   htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 999;
+  htim4.Init.Prescaler = 4;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim4.Init.Period = 1279;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -818,7 +859,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 4800;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -911,12 +952,36 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4|GPIO_PIN_5, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7|GPIO_PIN_8, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOD, USB_OTG_FS_PWR_EN_Pin|GPIO_PIN_14|GPIO_PIN_15|Bomba_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, AIN1_Driver1_Pin|AIN2_Driver1_Pin|LD1_3W_Pin|LD2_3W_Pin
+                          |Buzzer_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : PF6 PF7 PF14 PF15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_14|GPIO_PIN_15;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PC1 PC4 PC5 */
   GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_4|GPIO_PIN_5;
@@ -934,6 +999,20 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : PA4 PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PE7 PE8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_7|GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
   /*Configure GPIO pin : PB13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
@@ -941,6 +1020,28 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : USB_OTG_FS_PWR_EN_Pin PD14 PD15 Bomba_Pin */
+  GPIO_InitStruct.Pin = USB_OTG_FS_PWR_EN_Pin|GPIO_PIN_14|GPIO_PIN_15|Bomba_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : USB_OTG_FS_OVCR_Pin */
+  GPIO_InitStruct.Pin = USB_OTG_FS_OVCR_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(USB_OTG_FS_OVCR_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : AIN1_Driver1_Pin AIN2_Driver1_Pin LD1_3W_Pin LD2_3W_Pin
+                           Buzzer_Pin */
+  GPIO_InitStruct.Pin = AIN1_Driver1_Pin|AIN2_Driver1_Pin|LD1_3W_Pin|LD2_3W_Pin
+                          |Buzzer_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PA8 PA11 PA12 */
   GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_11|GPIO_PIN_12;
@@ -976,6 +1077,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         HAL_UART_Receive_IT(huart, &rxByte, 1);
     }
 
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART1) HAL_UART_Receive_IT(huart, &rxByte, 1);
 }
 
 

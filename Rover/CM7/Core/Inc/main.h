@@ -59,6 +59,22 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define USB_OTG_FS_PWR_EN_Pin GPIO_PIN_10
+#define USB_OTG_FS_PWR_EN_GPIO_Port GPIOD
+#define USB_OTG_FS_OVCR_Pin GPIO_PIN_7
+#define USB_OTG_FS_OVCR_GPIO_Port GPIOG
+#define AIN1_Driver1_Pin GPIO_PIN_8
+#define AIN1_Driver1_GPIO_Port GPIOC
+#define AIN2_Driver1_Pin GPIO_PIN_9
+#define AIN2_Driver1_GPIO_Port GPIOC
+#define LD1_3W_Pin GPIO_PIN_10
+#define LD1_3W_GPIO_Port GPIOC
+#define LD2_3W_Pin GPIO_PIN_11
+#define LD2_3W_GPIO_Port GPIOC
+#define Buzzer_Pin GPIO_PIN_12
+#define Buzzer_GPIO_Port GPIOC
+#define Bomba_Pin GPIO_PIN_0
+#define Bomba_GPIO_Port GPIOD
 
 /* USER CODE BEGIN Private defines */
 

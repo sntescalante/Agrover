@@ -2,6 +2,7 @@
 #define MOTOR_CONTROL_H
 
 #include "main.h"
+#include "cmsis_os2.h"
 #include <math.h>
 
 #define PULSE_RPM_0 0

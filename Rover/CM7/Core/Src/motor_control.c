@@ -1,5 +1,8 @@
 #include "motor_control.h"
 
+#define DUTY_INICIAL  40
+#define DUTY_PASO     10
+
 extern TIM_HandleTypeDef htim3;
 extern TIM_HandleTypeDef htim4;
 
@@ -10,6 +13,16 @@ extern const uint16_t ARR;
 
 uint16_t pulse;
 uint8_t current_direction = STOPPED;
+
+static uint8_t SiguienteDuty(uint8_t actual) {
+	if (actual < DUTY_INICIAL) {
+		return DUTY_INICIAL;
+	}
+	if (actual + DUTY_PASO >= 100) {
+		return 100;
+	}
+	return actual + DUTY_PASO;
+}
 
 uint8_t DCmotorsInit(){
 	dc_motors_forward_duty_cycle = 0;
@@ -48,13 +61,7 @@ uint16_t dutyCycleToPulse(uint8_t dc_motors_duty_cycle) {
 
 uint8_t MoveForward() {
 
-	dc_motors_backwards_duty_cycle = 0;
-
-	if (dc_motors_forward_duty_cycle <= 90) {
-		dc_motors_forward_duty_cycle += 10;
-	} else {
-		dc_motors_forward_duty_cycle = 100;
-	}
+	dc_motors_forward_duty_cycle = SiguienteDuty(dc_motors_forward_duty_cycle);
 
 	pulse = dutyCycleToPulse(dc_motors_forward_duty_cycle);
 
@@ -86,7 +93,7 @@ uint8_t MoveForward() {
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
 		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
 
-		HAL_Delay(20);
+		osDelay(20);
 
 		//Activar pines de avance
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
@@ -111,13 +118,8 @@ uint8_t MoveForward() {
 	return 0;
 }
 uint8_t MoveBackwards() {
-	dc_motors_forward_duty_cycle = 0;
 
-	if (dc_motors_backwards_duty_cycle <= 90) {
-		dc_motors_backwards_duty_cycle += 10;
-	} else {
-		dc_motors_backwards_duty_cycle = 100;
-	}
+	dc_motors_backwards_duty_cycle = SiguienteDuty(dc_motors_backwards_duty_cycle);
 
 	pulse = dutyCycleToPulse(dc_motors_backwards_duty_cycle);
 
@@ -149,7 +151,7 @@ uint8_t MoveBackwards() {
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
 		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
 
-		HAL_Delay(20);
+		osDelay(20);
 
 		//Activar pines de retroceso
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
